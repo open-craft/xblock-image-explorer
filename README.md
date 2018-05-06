@@ -32,6 +32,19 @@ advanced settings.
    `"image-explorer"` to the policy value list.
 3. Click the "Save changes" button.
 
+Testing
+-------
+
+Make sure you have a python virtual environment with `xblock-sdk` version `0.1.5` or higher.
+
+To run all integration and unit tests, run:
+
+```bash
+DJANGO_SETTINGS_MODULE=workbench.settings django-admin.py test
+```
+
+You may need to first install `geckodriver` on your system.
+
 Usage
 -----
 
@@ -92,8 +105,8 @@ background image and the content of the tooltips.
 The supported attributes of `<hotspot>` elements are `x` and `y` (both
 required) that specify the position of the hotspot on the background
 image, `item-id` which can be set to a unique string used to
-identify the hotspot in the emitted events and optional `side` attribute 
-that allows to override hotspot's popup position. If `side` attribute is 
+identify the hotspot in the emitted events and optional `side` attribute
+that allows to override hotspot's popup position. If `side` attribute is
 missing or set to anything except `left` and `right` automatic positioning
 is used.
 
@@ -125,6 +138,78 @@ rendered in the tooltip.
 The `<youtube>` element offers a convenient way of placing an embedded
 YouTube video into a tooltip. The required attributes are `video_id`,
 `width`, and `height`.
+
+#### The Ooyala element
+
+The `<ooyala>` element offers a convenient way of placing an embedded
+Ooyala video into a tooltip. The required attributes are `video_id`,
+`width`, and `height`.
+
+API for native mobile frontends
+-------------------------------
+**Retrieve fixed data for all Image Explorer XBlocks in a course:**
+```
+GET https://<lms_server_url>/api/courses/v1/blocks/?course_id=<course_id>&username=<username>&depth=all&requested_fields=student_view_data
+```
+
+Example image explorer return value:
+```
+"student_view_data": {
+    "hotspots": [
+        {
+            "item_id": "hotspotA",
+            "x": "370",
+            "feedback": {
+                "body": "<ul><li>Once there was a police car up here</li><li>Also there was a Fire Truck put up there</li></ul>",
+                "width": "300",
+                "youtube": null,
+                "max_height": null,
+                "height": "240",
+                "header": "<p>This is where many pranks take place. Below are some of the highlights:</p>",
+                "type": "text",
+                "side": "auto"
+            },
+            "y": "20"
+        },
+        {
+            "item_id": "hotspotB",
+            "x": "250",
+            "feedback": {
+                "body": null,
+                "width": "440",
+                "youtube": {
+                    "width": "400",
+                    "video_id": "dmoZXcuozFQ",
+                    "id": "youtube-f6c7d27d30834097bb1b17af1074e98c",
+                    "height": "300"
+                },
+                "max_height": null,
+                "height": "400",
+                "header": "<p>Watch the Red Line subway go around the dome</p>",
+                "type": "youtube",
+                "side": "auto"
+            },
+            "y": "70"
+        }
+    ],
+    "description": "<p>Enjoy using the Image Explorer. Click around the MIT Dome and see what you find!</p>",
+    "background": {
+        "src": "//upload.wikimedia.org/wikipedia/commons/thumb/a/ac/MIT_Dome_night1_Edit.jpg/800px-MIT_Dome_night1_Edit.jpg",
+        "height": null,
+        "width": null
+    }
+},
+```
+
+Downloading translations from Transifex
+-------------------------------------
+
+If you want to download translations from Transifex install [Transifex client][transifex-client] and run this command while inside project root directory
+```
+tx pull -f --mode=reviewed -l en,ar,es_419,fr,he,hi,ko_KR,pt_BR,ru,zh_CN
+```
+
+[transifex-client]: https://docs.transifex.com/client/installing-the-client
 
 License
 -------

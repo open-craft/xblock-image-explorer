@@ -3,46 +3,49 @@
 
 # Imports ###########################################################
 
+import uuid
 import logging
 import textwrap
-from lxml import etree
-from xml.etree import ElementTree as ET
+from lxml import etree, html
+from urlparse import urljoin
+from django.conf import settings
 
 from xblock.core import XBlock
-from xblock.fields import List, Scope, String
 from xblock.fragment import Fragment
+from xblock.fields import List, Scope, String, Boolean
 
 from StringIO import StringIO
 
-from .utils import render_template, AttrDict, load_resource
-
-
-# Globals ###########################################################
+from .utils import loader, AttrDict, _
 
 log = logging.getLogger(__name__)
 
 
-# Classes ###########################################################
-
-class ImageExplorerBlock(XBlock): # pylint: disable=no-init
+class ImageExplorerBlock(XBlock):  # pylint: disable=no-init
     """
     XBlock that renders an image with tooltips
     """
     display_name = String(
-        display_name="Display Name",
-        help="This name appears in the horizontal navigation at the top of the page.",
+        display_name=_("Display Name"),
+        help=_("This name appears in the horizontal navigation at the top of the page."),
         scope=Scope.settings,
-        default="Image Explorer"
+        default=_("Image Explorer")
+    )
+
+    _hotspot_coordinates_centered = Boolean(
+        display_name=_("Hot Spots Coordinates Centered"),
+        scope=Scope.settings,
+        default=False,
     )
 
     opened_hotspots = List(
-        help="Store hotspots opened by student, for completion",
+        help=_("Store hotspots opened by student, for completion"),
         default=[],
         scope=Scope.user_state,
     )
 
-    data = String(help="XML contents to display for this module", scope=Scope.content, default=textwrap.dedent("""\
-        <image_explorer schema_version='1'>
+    data = String(help=_("XML contents to display for this module"), scope=Scope.content, default=textwrap.dedent("""\
+        <image_explorer schema_version='2'>
             <background src="//upload.wikimedia.org/wikipedia/commons/thumb/a/ac/MIT_Dome_night1_Edit.jpg/800px-MIT_Dome_night1_Edit.jpg" />
             <description>
                 <p>
@@ -50,7 +53,7 @@ class ImageExplorerBlock(XBlock): # pylint: disable=no-init
                 </p>
             </description>
             <hotspots>
-                <hotspot x='370' y='20' item-id='hotspotA'>
+                <hotspot x='48.8125%' y='8.3162%' item-id='hotspotA'>
                     <feedback width='300' height='240'>
                         <header>
                             <p>
@@ -65,7 +68,7 @@ class ImageExplorerBlock(XBlock): # pylint: disable=no-init
                         </body>
                     </feedback>
                 </hotspot>
-                <hotspot x='250' y='70' item-id="hotspotB">
+                <hotspot x='33.8125%' y='18.5831%' item-id="hotspotB">
                     <feedback width='440' height='400'>
                         <header>
                             <p>
@@ -79,6 +82,18 @@ class ImageExplorerBlock(XBlock): # pylint: disable=no-init
         </image_explorer>
         """))
 
+    @property
+    def hotspot_coordinates_centered(self):
+        if self._hotspot_coordinates_centered:
+            return True
+
+        # hotspots are calculated from center for schema version > 1
+        xmltree = etree.fromstring(self.data)
+        schema_version = int(xmltree.attrib.get('schema_version', 1))
+
+        return schema_version > 1
+
+    @XBlock.supports("multi_device")  # Mark as mobile-friendly
     def student_view(self, context):
         """
         Player view, displayed to the student
@@ -89,6 +104,8 @@ class ImageExplorerBlock(XBlock): # pylint: disable=no-init
         description = self._get_description(xmltree)
         hotspots = self._get_hotspots(xmltree)
         background = self._get_background(xmltree)
+        has_youtube = False
+        has_ooyala = False
 
         for hotspot in hotspots:
             width = 'width:{0}px'.format(hotspot.feedback.width) if hotspot.feedback.width else 'width:300px'
@@ -99,35 +116,59 @@ class ImageExplorerBlock(XBlock): # pylint: disable=no-init
                              hotspot.feedback.max_height else 'max-height:300px'
 
             hotspot.reveal_style = 'style="{0};{1};{2}"'.format(width, height, max_height)
+            if hotspot.feedback.youtube:
+                has_youtube = True
 
-        sprite_url = self.runtime.local_resource_url(self, 'public/images/hotspot-sprite.png')
+            if hotspot.feedback.ooyala:
+                has_ooyala = True
 
         context = {
             'title': self.display_name,
+            'hotspot_coordinates_centered': self.hotspot_coordinates_centered,
             'description_html': description,
             'hotspots': hotspots,
             'background': background,
-            'sprite_url': sprite_url,
         }
 
-
         fragment = Fragment()
-        fragment.add_content(render_template('/templates/html/image_explorer.html', context))
-        fragment.add_css(load_resource('public/css/image_explorer.css'))
-        fragment.add_javascript(load_resource('public/js/image_explorer.js'))
+        fragment.add_content(loader.render_template('/templates/html/image_explorer.html', context))
+        fragment.add_css_url(self.runtime.local_resource_url(self, 'public/css/image_explorer.css'))
+        fragment.add_javascript_url(self.runtime.local_resource_url(self, 'public/js/image_explorer.js'))
+        if has_youtube:
+            fragment.add_javascript_url('https://www.youtube.com/iframe_api')
+
+        if has_ooyala:
+            fragment.add_javascript_url('https://player.ooyala.com/v3/635104fd644c4170ae227af2de27deab?platform=html5-priority')
+            fragment.add_javascript_url(self.runtime.local_resource_url(self, 'public/js/ooyala_player.js'))
 
         fragment.initialize_js('ImageExplorerBlock')
 
         return fragment
 
+    def student_view_data(self, context=None):
+        """
+        Returns a JSON representation of the Image Explorer Xblock, that can be
+        retrieved using Course Block API.
+        """
+        xmltree = etree.fromstring(self.data)
+
+        description = self._get_description(xmltree)
+        background = self._get_background(xmltree)
+        background['src'] = self._replace_static_from_url(background['src'])
+        hotspots = self._get_hotspots(xmltree)
+
+        return {
+            'description': description,
+            'background': background,
+            'hotspots': hotspots,
+        }
 
     @XBlock.json_handler
     def publish_event(self, data, suffix=''):
-
         try:
             event_type = data.pop('event_type')
         except KeyError:
-            return {'result': 'error', 'message': 'Missing event_type in JSON data'}
+            return {'result': 'error', 'message': self.ugettext('Missing event_type in JSON data')}
 
         data['user_id'] = self.scope_ids.user_id
         data['component_id'] = self._get_unique_id()
@@ -136,7 +177,7 @@ class ImageExplorerBlock(XBlock): # pylint: disable=no-init
         if event_type == 'xblock.image-explorer.hotspot.opened':
             self.register_progress(data['item_id'])
 
-        return {'result':'success'}
+        return {'result': 'success'}
 
     def register_progress(self, hotspot_id):
         """
@@ -157,7 +198,7 @@ class ImageExplorerBlock(XBlock): # pylint: disable=no-init
         opened_hotspots = [h for h in hotspots_ids if h in self.opened_hotspots]
         percent_completion = float(len(opened_hotspots)) / len(hotspots_ids)
         self.runtime.publish(self, 'grade', {
-            'value': percent_completion,
+           'value': percent_completion,
             'max_value': 1,
         })
         log.debug(u'Sending grade for {}: {}'.format(self._get_unique_id(), percent_completion))
@@ -167,7 +208,7 @@ class ImageExplorerBlock(XBlock): # pylint: disable=no-init
             unique_id = self.location.name
         except AttributeError:
             # workaround for xblock workbench
-            unique_id = self.parent.replace('.',  '-')
+            unique_id = 'workbench-workaround-id'
         return unique_id
 
     def studio_view(self, context):
@@ -175,10 +216,10 @@ class ImageExplorerBlock(XBlock): # pylint: disable=no-init
         Editing view in Studio
         """
         fragment = Fragment()
-        fragment.add_content(render_template('/templates/html/image_explorer_edit.html', {
+        fragment.add_content(loader.render_template('/templates/html/image_explorer_edit.html', {
             'self': self,
         }))
-        fragment.add_javascript(load_resource('public/js/image_explorer_edit.js'))
+        fragment.add_javascript_url(self.runtime.local_resource_url(self, 'public/js/image_explorer_edit.js'))
 
         fragment.initialize_js('ImageExplorerEditBlock')
 
@@ -186,8 +227,10 @@ class ImageExplorerBlock(XBlock): # pylint: disable=no-init
 
     @XBlock.json_handler
     def studio_submit(self, submissions, suffix=''):
-
         self.display_name = submissions['display_name']
+        if submissions.get('hotspot_coordinates_centered', False):
+            self._hotspot_coordinates_centered = True
+
         xml_content = submissions['data']
 
         try:
@@ -214,12 +257,31 @@ class ImageExplorerBlock(XBlock): # pylint: disable=no-init
             'height': background.get('height')
         })
 
+    def _replace_static_from_url(self, url):
+        if not url:
+            return url
+        try:
+            from static_replace import replace_static_urls
+        except ImportError:
+            return url
+
+        url = '"{}"'.format(url)
+        lms_relative_url = replace_static_urls(url, course_id=self.course_id)
+        lms_relative_url = lms_relative_url.strip('"')
+        return self._make_url_absolute(lms_relative_url)
+
+    def _make_url_absolute(self, url):
+        lms_base = settings.ENV_TOKENS.get('LMS_BASE')
+        scheme = 'https' if settings.HTTPS == 'on' else 'http'
+        lms_base = '{}://{}'.format(scheme, lms_base)
+        return urljoin(lms_base, url)
+
     def _inner_content(self, tag):
         """
         Helper met
         """
         if tag is not None:
-            return u''.join(ET.tostring(e) for e in tag)
+            return u''.join(html.tostring(e) for e in tag)
         return None
 
     def _get_description(self, xmltree):
@@ -235,7 +297,7 @@ class ImageExplorerBlock(XBlock): # pylint: disable=no-init
         """
         Parse the XML to get the hotspot information
         """
-        hotspots_element= xmltree.find('hotspots')
+        hotspots_element = xmltree.find('hotspots')
         hotspot_elements = hotspots_element.findall('hotspot')
         hotspots = []
         for index, hotspot_element in enumerate(hotspot_elements):
@@ -260,17 +322,33 @@ class ImageExplorerBlock(XBlock): # pylint: disable=no-init
             if youtube_element is not None:
                 feedback.type = 'youtube'
                 feedback.youtube = AttrDict()
+                feedback.youtube.id = 'youtube-{}'.format(uuid.uuid4().hex)
                 feedback.youtube.video_id = youtube_element.get('video_id')
                 feedback.youtube.width = youtube_element.get('width')
                 feedback.youtube.height = youtube_element.get('height')
+
+            feedback.ooyala = None
+            ooyala_element = feedback_element.find('ooyala')
+            if ooyala_element is not None:
+                feedback.type = 'ooyala'
+                feedback.ooyala = AttrDict()
+                feedback.ooyala.video_id = ooyala_element.get('video_id')
+                feedback.ooyala.width = ooyala_element.get('width')
+                feedback.ooyala.height = ooyala_element.get('height')
 
             hotspot = AttrDict()
             hotspot.item_id = hotspot_element.get('item-id')
             if hotspot.item_id is None:
                 hotspot.item_id = 'hotspot' + str(index)
             hotspot.feedback = feedback
+
             hotspot.x = hotspot_element.get('x')
+            if not hotspot.x.endswith('%'):
+                hotspot.x += 'px'  # px is deprecated as it is not responsive
+
             hotspot.y = hotspot_element.get('y')
+            if not hotspot.y.endswith('%'):
+                hotspot.y += 'px'  # px is deprecated as it is not responsive
 
             hotspots.append(hotspot)
 
