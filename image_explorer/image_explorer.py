@@ -138,6 +138,7 @@ class ImageExplorerBlock(XBlock):  # pylint: disable=no-init
             fragment.add_javascript_url('https://www.youtube.com/iframe_api')
 
         if has_ooyala:
+            fragment.add_javascript_url('https://player.ooyala.com/v3/635104fd644c4170ae227af2de27deab?platform=html5-priority')
             fragment.add_javascript_url(self.runtime.local_resource_url(self, 'public/js/ooyala_player.js'))
 
         fragment.initialize_js('ImageExplorerBlock')
@@ -331,7 +332,6 @@ class ImageExplorerBlock(XBlock):  # pylint: disable=no-init
             if ooyala_element is not None:
                 feedback.type = 'ooyala'
                 feedback.ooyala = AttrDict()
-                feedback.ooyala.id = 'ooyala-{}'.format(uuid.uuid4().hex)
                 feedback.ooyala.video_id = ooyala_element.get('video_id')
                 feedback.ooyala.width = ooyala_element.get('width')
                 feedback.ooyala.height = ooyala_element.get('height')

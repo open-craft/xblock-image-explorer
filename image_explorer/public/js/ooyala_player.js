@@ -1,11 +1,8 @@
 $(function(){
-  $('#ooyalaplayer_2').closest('.image-explorer-hotspot').on('feedback:open', function (evt) {
-      console.log("hello");
-      OO.Player.create('ooyalaplayer_2', 'hiZ3lpeTplH2jtdlbzGNfTmmb0pW5zlW');
-  }).on('feedback:close', function (evt) {
-      OO.Player.create('ooyalaplayer_2').pause();
-  });
-  if (!window.OO) {
-      require(['//player.ooyala.com/static/v4/production/core.js']);
-  }
+    $('#ooyalaplayer_2').closest('.image-explorer-hotspot').on('feedback:open', function (evt) {
+        var video_id = $('#ooyalaplayer_2').data("video-id")
+        OO.Player.create('ooyalaplayer_2', video_id);
+    }).on('feedback:close', function (evt) {
+        OO.Player.create('ooyalaplayer_2').pause();
+    });
 });
