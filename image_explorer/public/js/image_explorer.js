@@ -47,8 +47,9 @@ function ImageExplorerBlock(runtime, element) {
 
       setRevealPosition(target, reveal);
 
-      reveal.css('display', 'block');
       active_feedback = reveal;
+      var $revealClone = reveal.clone();
+      $revealClone.css('display', 'block').appendTo('.hotspot-detail');
       hotspot_opened_at = new Date().getTime();
       publish_event({
               event_type:'xblock.image-explorer.hotspot.opened',
@@ -59,7 +60,7 @@ function ImageExplorerBlock(runtime, element) {
     /* close feedback action */
     function close_feedback() {
       // Close the visible feedback popup
-      active_feedback.css('display', 'none');
+      $('.hotspot-detail').empty();
       var hotspot = active_feedback.closest('.image-explorer-hotspot');
       var duration = new Date().getTime() - hotspot_opened_at;
       publish_event({
